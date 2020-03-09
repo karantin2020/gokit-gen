@@ -1,4 +1,4 @@
-{{ define "funcSignature" }}{{ .Name }}(ctx context.Context {{- $message := messageByKind .InKind -}}{{- range $message.Fields }},{{ if .IsBasic }}{{lowerFirst .PublicName}} {{.GoKind}}{{- else }}{{lowerFirst .PublicName}} *{{.Kind}}{{- end }}{{- end }})({{- $message := messageByKind .OutKind -}}{{- range $message.Fields }}{{ if .IsRepeated}}[]{{else if .IsBasic}}{{else}}*{{end}}{{.Kind}},{{- end }} error){{ end }}
+{{ define "funcSignature" }}{{ .Name }}(ctx context.Context, req *{{ .InKind }})(*{{ .OutKind }}, error){{ end }}
 {{ define "requestSignature" }}{{- $message := messageByKind .InKind -}}{{- range $message.Fields }}{{.PublicName}}:{{lowerFirst .PublicName}}, {{- end }}{{ end }}
 {{ define "responseSignature" }}{{- $message := messageByKind .OutKind -}}{{- range $message.Fields }}domResp.{{.PublicName}}, {{- end }}{{ end }}
 {{- if ne (len .Services) 0}}
@@ -17,14 +17,19 @@ import(
     kitGRPC "github.com/go-kit/kit/transport/grpc"
 )
 {{ if hasStreaming }}
+// ClientOption func
 type ClientOption func(*grpcClient)
+// ClientRequestFunc func
 type ClientRequestFunc func(context.Context, *metadata.MD) context.Context
+// ClientResponseFunc func
 type ClientResponseFunc func(context.Context, metadata.MD, metadata.MD) context.Context
 
+// ClientBefore func
 func ClientBefore(before ...ClientRequestFunc) ClientOption {
 	return func(c *grpcClient) { c.before = append(c.before, before...) }
 }
 
+// ClientAfter func
 func ClientAfter(after ...ClientResponseFunc) ClientOption {
 	return func(c *grpcClient) { c.after = append(c.after, after...) }
 }
@@ -54,11 +59,13 @@ type grpcClient struct{
     {{- end }} {{/* range services */}}
 }
 
+// Log method
 func (c *grpcClient) Log() log.Logger {
 	return c.log
 }
 
 {{ if hasStreaming }}
+// ApplyExtraOptions method
 func (c *grpcClient) ApplyExtraOptions(options ...ClientOption) {
 	for _, option := range options {
 		option(c)
@@ -69,25 +76,25 @@ func (c *grpcClient) ApplyExtraOptions(options ...ClientOption) {
 {{- range $service := .Services }}
     {{- range $method := $service.Methods}}
         {{- if and .IsServerStreaming (not .IsClientStreaming) }}
-            // getter for receive{{.Name}} chan {{.OutKind}}
+            // Receive{{.Name}} getter for receive{{.Name}} chan {{.OutKind}}
             func (c *grpcClient) Receive{{.Name}}() chan *{{.OutKind}}{
                 return c.receive{{.Name}}
             }
         {{- else if and (not .IsServerStreaming) .IsClientStreaming }}
-            // getter for broadcast{{.Name}} chan *pb.{{.InKind}}
+            // Broadcast{{.Name}} getter for broadcast{{.Name}} chan *pb.{{.InKind}}
             func (c *grpcClient) Broadcast{{.Name}}() chan *pb.{{.InKind}}{
                 return c.broadcast{{.Name}}
             }
-            // getter for close{{.Name}} to end streaming to server
+            // Close{{.Name}} getter for close{{.Name}} to end streaming to server
             func (c *grpcClient) Close{{.Name}}() chan struct{}{
                 return c.close{{.Name}}
             }
         {{- else if and .IsServerStreaming .IsClientStreaming }}
-            // getter for receive{{.Name}} chan {{.OutKind}}
+            // Receive{{.Name}} getter for receive{{.Name}} chan {{.OutKind}}
             func (c *grpcClient) Receive{{.Name}}() chan *{{.OutKind}}{
                 return c.receive{{.Name}}
             }
-            // getter for broadcast{{.Name}} chan *pb.{{.InKind}}
+            // Broadcast{{.Name}} getter for broadcast{{.Name}} chan *pb.{{.InKind}}
             func (c *grpcClient) Broadcast{{.Name}}() chan *pb.{{.InKind}}{
                 return c.broadcast{{.Name}}
             }
@@ -95,6 +102,7 @@ func (c *grpcClient) ApplyExtraOptions(options ...ClientOption) {
     {{- end }}
 {{ end }}
 
+// NewClient constructor
 func NewClient(conn *grpc.ClientConn, logger log.Logger, options ...kitGRPC.ClientOption) *grpcClient {
 	result := &grpcClient{
 		log:logger,        
@@ -165,30 +173,31 @@ func NewClient(conn *grpc.ClientConn, logger log.Logger, options ...kitGRPC.Clie
     {{ $serviceName := .Name | upperFirst }}
     {{- range $method := $service.Methods}}            
         {{ if .NoStreaming}}
+           // {{.Name}} client method
            func (c *grpcClient) {{ template "funcSignature" . }} {
-                resp, err := c.{{.Name}}Endpoint(ctx,  &{{ .InKind }}{ {{ template "requestSignature" . }} })
+                resp, err := c.{{.Name}}Endpoint(ctx, req)
                 if err != nil {
-                    return {{ $message := messageByKind .OutKind -}}{{- range $message.Fields }}{{.ZeroValue}},{{- end }} err
+                    return nil, err
                 }
                 domResp, ok := resp.(*{{.OutKind}})
                 if !ok{
                     err := fmt.Errorf("expecting *{{.OutKind}} received %T", resp)
-                    return {{ $message := messageByKind .OutKind -}}{{- range $message.Fields }}{{.ZeroValue}},{{- end }} err
+                    return nil, err
                 } 
-                return {{ template "responseSignature" . }} nil
+                return domResp, nil
             }
         {{- else if and .IsServerStreaming (not .IsClientStreaming) }}
-            // unusable : client has to implement Service interface for half duplex {{.Name}}
+            // {{.Name}} method unusable : client has to implement Service interface for half duplex {{.Name}}
             func (c *grpcClient) {{.Name}}(req *pb.{{.InKind}}, stream pb.{{$service.Name}}_{{.Name}}Server) error {
                return nil
 		    }
         {{- else if and (not .IsServerStreaming) .IsClientStreaming }}
-            // unusable : client has to implement Service interface for reverse half duplex {{.Name}}
+            // {{.Name}} method unusable : client has to implement Service interface for reverse half duplex {{.Name}}
             func (c *grpcClient) {{.Name}}(stream pb.{{ $serviceName }}_{{.Name}}Server) error {
 		        return nil
 		    }      
         {{- else if and .IsServerStreaming .IsClientStreaming }}
-            // unusable : client has to implement Service interface for full duplex {{.Name}}
+            // {{.Name}} method unusable : client has to implement Service interface for full duplex {{.Name}}
             func (c *grpcClient) {{.Name}}(stream pb.{{ $serviceName }}_{{.Name}}Server) error {
 				return nil
 		    }   
@@ -201,14 +210,14 @@ func NewClient(conn *grpc.ClientConn, logger log.Logger, options ...kitGRPC.Clie
     {{ $serviceName := .Name | upperFirst }}
     {{- range $method := $service.Methods}}            
         {{- if and .IsServerStreaming (not .IsClientStreaming) }}
-            // usable : implementation of direct client for {{ .Name }} - half duplex
-            func (c *grpcClient) Call{{ .Name }}(extCtx context.Context {{- $message := messageByKind .InKind -}}{{- range $message.Fields }},{{ if .IsBasic }}{{lowerFirst .PublicName}} {{.GoKind}}{{- else }}{{lowerFirst .PublicName}} *{{.Kind}}{{- end }}{{- end }}) error {
+            // Call{{ .Name }} method usable : implementation of direct client for {{ .Name }} - half duplex
+            func (c *grpcClient) Call{{ .Name }}(extCtx context.Context, inReq *{{ .InKind }}) error {
                 var err error
                 ctx, cancel := context.WithCancel(extCtx)
 
                 ctx = context.WithValue(ctx, kitGRPC.ContextKeyRequestMethod, "Call{{.Name}}")
 
-                req := NewPBFrom{{.InKind}}(&{{ .InKind }}{ {{ template "requestSignature" . }} })
+                req := NewPBFrom{{.InKind}}(inReq)
                 
                 md := &metadata.MD{}
                 for _, f := range c.before {
@@ -257,7 +266,7 @@ func NewClient(conn *grpc.ClientConn, logger log.Logger, options ...kitGRPC.Clie
                 return nil
             }
         {{- else if and (not .IsServerStreaming) .IsClientStreaming }}
-             // usable : implementation of direct client for {{ .Name }} - reverse half duplex
+             // Call{{ .Name }} method usable : implementation of direct client for {{ .Name }} - reverse half duplex
              func (c *grpcClient) Call{{ .Name }}(extCtx context.Context) (*{{.OutKind}}, error) {
                 var err error
                 ctx := context.WithValue(extCtx, kitGRPC.ContextKeyRequestMethod, "Call{{.Name}}")
@@ -317,7 +326,7 @@ func NewClient(conn *grpc.ClientConn, logger log.Logger, options ...kitGRPC.Clie
                 return domResp, sendErr
             }
         {{- else if and .IsServerStreaming .IsClientStreaming }}
-            // usable : implementation of direct client for {{ .Name }} - full duplex
+            // Call{{ .Name }} method usable : implementation of direct client for {{ .Name }} - full duplex
             func (c *grpcClient) Call{{ .Name }}(extCtx context.Context) error {
                 var err error
                 ctx, cancel := context.WithCancel(extCtx)

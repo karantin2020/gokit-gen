@@ -40,7 +40,7 @@ import(
 {{/* transformers*/}}
 {{ range .Messages }}
 {{ $messageName := .Name }}
-// transformer *pb.{{.Name}} to *{{.Name}}
+// New{{ .Name }}FromPB transformer *pb.{{.Name}} to *{{.Name}}
  func New{{ .Name }}FromPB (msg *pb.{{.Name}}) *{{.Name}} {
     if msg == nil{
         return nil
@@ -75,7 +75,7 @@ import(
     return &result
 }
 
-// transformer *{{.Name}} to *pb.{{.Name}}
+// NewPBFrom{{ .Name | upperFirst }} transformer *{{.Name}} to *pb.{{.Name}}
 func NewPBFrom{{ .Name | upperFirst }} (msg *{{.Name}}) *pb.{{.Name}} {
     if msg == nil{
         return nil

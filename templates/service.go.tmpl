@@ -1,6 +1,6 @@
 {{/* functions signature */}}
-{{ define "funcSignature" }}{{ .Name }}(ctx context.Context {{- $message := messageByKind .InKind -}}{{- range $message.Fields }},{{ if .IsBasic }}{{lowerFirst .PublicName}} {{.GoKind}}{{- else }}{{lowerFirst .PublicName}} *{{.Kind}}{{- end }}{{- end }})({{- $message := messageByKind .OutKind -}}{{- range $message.Fields }}{{ if .IsRepeated}}[]{{else if .IsBasic}}{{else}}*{{end}}{{.Kind}},{{- end }} error){{ end }}
-{{ define "repoSignature" }}{{- $message := messageByKind .OutKind -}}{{- range $message.Fields }}res{{.PublicName}},{{- end }} err:= s.repo.{{ .Name }}(ctx {{- $message := messageByKind .InKind -}}{{- range $message.Fields }},{{ if .IsBasic }}{{lowerFirst .PublicName}}{{- else }}{{lowerFirst .PublicName}}{{- end }}{{- end }}){{ end }}
+{{ define "funcSignature" }}{{ .Name }}(ctx context.Context, req *{{ .InKind }})(*{{ .OutKind }}, error){{ end }}
+{{ define "repoSignature" }}res, err:= s.repo.{{ .Name }}(ctx, req){{ end }}
 {{ define "serviceReturn" }}{{- $message := messageByKind .OutKind -}}{{- range $message.Fields }}res{{.PublicName}},{{- end }}nil{{ end }}
 {{- if ne (len .Services) 0}}
 package {{ projectName }}
@@ -14,6 +14,7 @@ import(
     {{ if hasStreaming }}pb "{{ go_package }}"{{end}}
 )
 
+// Service interface type 
 type Service interface {
     {{- range $service := .Services }}
         {{- range $method := $service.Methods}}
@@ -45,6 +46,7 @@ type serviceImpl struct{
     {{- end }}
 }
 
+// NewService constructor
 func NewService(log log.Logger, repo Repository) Service{
     return &serviceImpl{ log:log, repo:repo, {{- range .Services }}{{- range .Methods}}{{- if .IsServerStreaming }} broadcast{{.Name}}: make(chan {{.OutKind}}),{{- end }}{{- end }}{{- end }} }
 }
@@ -64,18 +66,19 @@ func (s *serviceImpl) Log() log.Logger {
     {{- end }}
 {{ end }}
 
+// {{ .Name }} service method
 {{- range $service := .Services }}
     {{- range $method := $service.Methods}}
         {{- if .NoStreaming}}
             func (s *serviceImpl) {{- template "funcSignature" . -}}{
                 {{ template "repoSignature" . }}
                 if err!=nil{
-                    return {{ $message := messageByKind .OutKind -}}{{- range $message.Fields }}{{.ZeroValue}},{{- end }} err
+                    return nil, err
                 }
-                return {{ template "serviceReturn" . }}
+                return res, nil
             }
         {{- else if and .IsServerStreaming (not .IsClientStreaming) }}
-            // half duplex for {{.Name}}
+            // {{.Name}} half duplex for {{.Name}}
             func (s *serviceImpl) {{.Name}}(pbReq *pb.{{.InKind}}, stream pb.{{$service.Name}}_{{.Name}}Server) error{
                 waitc := make(chan struct{})
                 // server sending loop. exit conditions : client closes or sending error
@@ -101,12 +104,11 @@ func (s *serviceImpl) Log() log.Logger {
                 }(stream.Context(), waitc)
                 // send response to client : POC for using broadcast channel
                 req := New{{.InKind}}FromPB(pbReq)
-                {{ $message := messageByKind .OutKind -}}{{- range $message.Fields }}res{{.PublicName}},{{- end }} err:= s.repo.{{ .Name }}(stream.Context() {{- $message := messageByKind .InKind -}}{{- range $message.Fields }},req.{{.PublicName}}{{- end }})
+                resp, err:= s.repo.{{ .Name }}(stream.Context(), req)
                 if err!=nil{
                     return err    
                 }
-                resp := {{.OutKind}}{ {{ $message := messageByKind .OutKind -}}{{- range $message.Fields }}{{.PublicName}} : res{{.PublicName}},{{- end }} }
-                s.broadcast{{.Name}} <- resp
+                s.broadcast{{.Name}} <- *resp
                 // wait until client has closed or we're having a sending error                
                 <-waitc                
                 return sendErr

@@ -12,6 +12,7 @@ import(
     kitGRPC "github.com/go-kit/kit/transport/grpc"
 )
 
+// GRPCServer struct holds gokit handlers
 type GRPCServer struct {
 	logger log.Logger
     {{- range $service := .Services }}
@@ -29,6 +30,7 @@ type GRPCServer struct {
     {{- end }} {{/* range services */}}
 }
 
+// NewGRPCServer constructor
 func NewGRPCServer(endpoints Endpoints, logger log.Logger, options ...kitGRPC.ServerOption) (*GRPCServer, error) {
 	return &GRPCServer{
 		logger:logger, {{- range $service := .Services }}
@@ -102,7 +104,7 @@ func NewGRPCServer(endpoints Endpoints, logger log.Logger, options ...kitGRPC.Se
     {{ $serviceName := .Name | upperFirst }}
     {{- range $method := $service.Methods}}       
         {{- if and .IsServerStreaming (not .IsClientStreaming) }}
-            // request and stream for half duplex
+            // RequestAndStream{{.Name}} struct holds request and stream for half duplex
             type RequestAndStream{{.Name}} struct{
                 Request *pb.{{.InKind}}
                 Stream pb.{{$service.Name}}_{{.Name}}Server
@@ -115,7 +117,7 @@ func NewGRPCServer(endpoints Endpoints, logger log.Logger, options ...kitGRPC.Se
     {{ $serviceName := .Name | upperFirst }}
     {{- range $method := $service.Methods}}
         {{- if $method.NoStreaming}}
-            // protobuf implementation : no streaming for {{ .Name }}            
+            // {{.Name}} protobuf implementation : no streaming for {{ .Name }}            
             func (s *GRPCServer) {{.Name}}(ctx context.Context, req *pb.{{.InKind}}) (*pb.{{.OutKind}}, error) {
                 _, resp, err := s.{{.Name}}GRPCHandler.ServeGRPC(ctx, req)
                 if err != nil {
@@ -129,20 +131,20 @@ func NewGRPCServer(endpoints Endpoints, logger log.Logger, options ...kitGRPC.Se
                 return pbResp, nil
             }
         {{- else if and .IsServerStreaming (not .IsClientStreaming) }}
-            // protobuf implementation : half duplex for {{.Name}}
+            // {{.Name}} protobuf implementation : half duplex for {{.Name}}
             func (s *GRPCServer) {{.Name}}(req *pb.{{.InKind}}, stream pb.{{$service.Name}}_{{.Name}}Server) error {
                 reqNStream := &RequestAndStream{{.Name}}{  Request : req, Stream : stream }
 		        _,_,err := s.{{.Name}}GRPCHandler.ServeGRPC(stream.Context(), reqNStream)
 				return err
 		    }
         {{- else if and (not .IsServerStreaming) .IsClientStreaming }}
-            // protobuf implementation : reverse half duplex for {{.Name}}
+            // {{.Name}} protobuf implementation : reverse half duplex for {{.Name}}
             func (s *GRPCServer) {{.Name}}(stream pb.{{ $serviceName }}_{{.Name}}Server) error {
 		        _,_,err := s.{{.Name}}GRPCHandler.ServeGRPC(stream.Context(), stream)
 				return err
 		    }      
         {{- else if and .IsServerStreaming .IsClientStreaming }}
-            // protobuf implementation : full duplex for {{.Name}}
+            // {{.Name}} protobuf implementation : full duplex for {{.Name}}
             func (s *GRPCServer) {{.Name}}(stream pb.{{ $serviceName }}_{{.Name}}Server) error {
 		        _,_,err := s.{{.Name}}GRPCHandler.ServeGRPC(stream.Context(), stream)
 				return err

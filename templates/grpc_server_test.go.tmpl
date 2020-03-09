@@ -1,7 +1,7 @@
 {{/* functions signature */}}
-{{ define "funcSignature" }}{{ .Name }}(ctx context.Context {{- $message := messageByKind .InKind -}}{{- range $message.Fields }},{{ if .IsBasic }}{{lowerFirst .PublicName}} {{.GoKind}}{{- else }}{{lowerFirst .PublicName}} *{{.Kind}}{{- end }}{{- end }})({{- $message := messageByKind .OutKind -}}{{- range $message.Fields }}{{if .IsRepeated}}[]{{else if .IsBasic}}{{else}}*{{end}}{{.Kind}},{{- end }} error){{ end }}
-{{ define "returnSignature" }}{{- $message := messageByKind .OutKind -}}{{- range $message.Fields }}{{lowerFirst .PublicName}}, {{- end }} err{{ end }}
-{{ define "requestSignature" }}{{- $message := messageByKind .InKind -}}{{- range $message.Fields }}{{.ZeroValue}}, {{- end }}{{ end }}
+{{ define "funcSignature" }}{{ .Name }}(ctx context.Context, req *{{ .InKind }})(*{{ .OutKind }}, error){{ end }}
+{{ define "returnSignature" }}resp, err{{ end }}
+{{ define "requestSignature" }}&{{ .InKind }}{}{{ end }}
 {{- if ne (len .Services) 0}}
 package {{ projectName }}_test
 
@@ -34,7 +34,7 @@ type GRPCMockedRepository struct{}
     {{- range .Methods }}
     func (r *GRPCMockedRepository) {{- template "funcSignature" . -}}{
         // TODO : implement me
-        return {{ $message := messageByKind .OutKind -}}{{- range $message.Fields }}{{.ZeroValue}},{{- end }} errors.New("repository not implemented")
+        return nil, errors.New("repository not implemented")
     }
     {{ end }}
 {{- end }}
@@ -114,9 +114,7 @@ func generateJWTMeta() string {
 					t.Fatalf("unable to test: %+v", err)
 				}
 				// TODO : check response (write the actual test)         
-				{{ $message := messageByKind .OutKind -}}{{- range $message.Fields }}  
-				t.Logf("{{lowerFirst .PublicName}} : %v", {{lowerFirst .PublicName}}) 
-				{{- end }}          
+				t.Logf("resp : %v", resp) 
 			}    
         {{- else if and .IsServerStreaming (not .IsClientStreaming) }}
             // half duplex for {{.Name}}
@@ -214,7 +212,7 @@ func generateJWTMeta() string {
 				}()
 				logger.Log("client","placing call to {{.Name}}")
 				// TODO : load the payloads
-				err = client.Call{{.Name}}(ctx, {{- $message := messageByKind .InKind -}}{{- range $message.Fields }}{{- if not .IsBasic}}{{- $subMessage := messageByKind .Kind -}}&{{.Kind}} { {{- range $subMessage.Fields }}{{.PublicName}}:{{.ZeroValue}},{{ end }} }, {{ end }} {{- end }} )
+				err = client.Call{{.Name}}(ctx, &{{ .InKind }}{} )
 				if err != nil && err.Error() != "rpc error: code = Canceled desc = context canceled" {
 					t.Fatalf("unable to test: %+v", err)
 				}		     
@@ -408,7 +406,7 @@ func generateJWTMeta() string {
 				}()
 				logger.Log("client","placing call to {{.Name}}")
 				// TODO : load the payloads
-				err = client.Call{{.Name}}(ctx)
+				err = client.Call{{.Name}}(ctx, &{{ .InKind }}{})
 				if err != nil && err.Error() != "rpc error: code = Canceled desc = context canceled" {
 					t.Fatalf("unable to test: %+v", err)
 				}		     

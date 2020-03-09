@@ -1,6 +1,6 @@
 {{/* functions signature */}}
-{{ define "funcSignature" }}{{ .Name }}(ctx {{- $message := messageByKind .InKind -}}{{- range $message.Fields }},domReq.{{ .PublicName }} {{- end }}){{ end }}
-{{ define "returnSignature" }}{{- $message := messageByKind .OutKind -}}{{- range $message.Fields }}{{lowerFirst .PublicName}}, {{- end }} err{{- end }}
+{{ define "funcSignature" }}{{ .Name }}(ctx, domReq){{ end }}
+{{ define "returnSignature" }}resp, err{{- end }}
 {{ define "responseSignature" }}{{- $message := messageByKind .OutKind -}}{{- range $message.Fields }}{{.PublicName}}:{{lowerFirst .PublicName}}, {{- end }}{{- end }}
 {{- if ne (len .Services) 0}}
 package {{ projectName }}
@@ -15,6 +15,7 @@ import(
     pb "{{ go_package }}"
 )
 
+// Endpoints struct holds gokit endpoints
 type Endpoints struct {
     {{- range $service := .Services }}
         {{- range $method := $service.Methods}}
@@ -38,6 +39,7 @@ func wrapEndpoint(ep endpoint.Endpoint, mwares []endpoint.Middleware) endpoint.E
 	return ep
 }
 
+// MakeEndpoints constructor
 func MakeEndpoints(svc Service, mwares []endpoint.Middleware) Endpoints {
 	return Endpoints{		
         {{- range $service := .Services }}
@@ -58,11 +60,11 @@ func MakeEndpoints(svc Service, mwares []endpoint.Middleware) Endpoints {
 					level.Error(svc.Log()).Log("endpoint_error",err)
 					return nil, err
 				}
-				{{ template "returnSignature" . }} := svc.{{ template "funcSignature" . }}
+				resp, err := svc.{{ template "funcSignature" . }}
 				if err != nil {
 					return nil, err
 				}
-				return &{{ .OutKind }}{ {{- template "responseSignature" . }} }, nil
+				return resp, nil
 			}
 		}
         {{- else if and .IsServerStreaming (not .IsClientStreaming) }}

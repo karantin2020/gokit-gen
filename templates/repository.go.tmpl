@@ -1,5 +1,5 @@
 {{/* functions signature */}}
-{{ define "funcSignature" }}{{ .Name }}(ctx context.Context {{- $message := messageByKind .InKind -}}{{- range $message.Fields }},{{ if .IsBasic }}{{lowerFirst .PublicName}} {{.GoKind}}{{- else }}{{lowerFirst .PublicName}} *{{.Kind}}{{- end }}{{- end }})({{- $message := messageByKind .OutKind -}}{{- range $message.Fields }}{{if .IsRepeated}}[]{{else if .IsBasic}}{{else}}*{{end}}{{.Kind}},{{- end }} error){{ end }}
+{{ define "funcSignature" }}{{ .Name }}(ctx context.Context, req *{{ .InKind }})(*{{ .OutKind }}, error){{ end }}
 {{- if ne (len .Services) 0}}
 package {{ projectName }}
 
@@ -10,6 +10,7 @@ import(
     "github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 )
+
 /**
 type MysqlConfig struct {
 	Host              string `env:"DB_READ_HOST" envDefault:"local-{{projectName}}"`
@@ -24,9 +25,10 @@ type MysqlConfig struct {
 	DatabaseName      string `env:"DB_READ_DATABASE" envDefault:"{{projectName}}"`
 }
 **/
-/**
 
-**/
+/*
+Repository interface
+*/
 type Repository interface{
     {{- range .Services}}
         {{- range .Methods }}
@@ -40,15 +42,17 @@ type repositoryImpl struct{
     db   interface{} // TODO : use your own kind, e.g. *mongo.Client
 }
 
+// NewRepository constructor
 func NewRepository(logger log.Logger, db interface{}) Repository{
     return &repositoryImpl{log:logger,db:db}
 }
 
 {{ range .Services}}
     {{- range .Methods }}
+    // {{ .Name }} repository method
     func (r *repositoryImpl) {{- template "funcSignature" . -}}{
         level.Error(r.log).Log("repository", "repository not implemented")
-        return {{ $message := messageByKind .OutKind -}}{{- range $message.Fields }}{{.ZeroValue}},{{- end }} errors.New("repository not implemented")
+        return nil, errors.New("repository not implemented")
     }
     {{ end }}
 {{- end }}

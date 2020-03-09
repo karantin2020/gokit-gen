@@ -6,6 +6,7 @@ import(
 {{/* enums */}}
 {{- range .Enums}}
   {{ $enumName := .PublicName }}
+  // {{ $enumName }} type
   type {{ $enumName }} int
   const(
   {{- range .Fields }}
@@ -17,6 +18,7 @@ import(
 
 {{/* messages */}}
 {{ range .Messages }}
+ // {{ .Name }} message type
  type {{ .Name }} struct {
   {{- range .Fields }}
      {{- if .IsOneOf }}
